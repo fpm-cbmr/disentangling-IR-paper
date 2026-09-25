@@ -1,6 +1,6 @@
 # Plasma Proteomics Identifies Insulin Resistance Signatures Predictive of Cardiometabolic Disease Risk
 
-This repository contains the R code used for the publication: "Plasma Proteomics Identifies Insulin Resistance Signatures Predictive of Cardiometabolic Disease Risk" (Larsen et al.)
+This repository contains the R code used for the publication: "Plasma Proteomics Identifies Insulin Resistance Signatures Predictive of Cardiometabolic Disease Risk" (Kjærgaard & Kurgan et al.)
 
 ## Repository Structure
 
