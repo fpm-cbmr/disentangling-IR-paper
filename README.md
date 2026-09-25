@@ -4,7 +4,7 @@ This repository contains the R code used for the publication: "Plasma Proteomics
 
 ## Repository Structure
 
-- `R/` – All R scripts
+- `R/` – All R scripts used to analyze and generate the figures presented in the manuscript
 - `data-raw/` – Protein-level summary statistics and public reference files
 
 ## Data Availability
