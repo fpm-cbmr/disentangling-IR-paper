@@ -1,0 +1,38 @@
+# --- R session / IDE ---
+.Rproj.user
+.Rhistory
+.RData
+.RDataTmp
+.Ruserdata
+renv/library/
+renv/staging/
+
+# --- Individual-level data: MUST NOT be committed (GDPR) ---
+# Raw proteomics and clinical data are not publicly shareable. These patterns
+# are here so the files can sit in the working tree without ever being staged.
+data-raw/Olink_NPX_*.csv
+data-raw/Spectronaut_*.tsv
+data-raw/Clinical_data_*.txt
+data-raw/Clinical_data_*.rds
+data-raw/Sample_design_*.txt
+Olink_proteome_validation_cohort.rds
+Clinical_data_validation_cohort.rds
+
+# --- UK Biobank-derived tables: not redistributable ---
+data-raw/UKBB_protein_Mvalue_correlations.csv
+data-raw/UKBB_incident_disease_sumstats.csv
+
+# --- Large public reference file: link, do not commit (35 MB) ---
+data-raw/hpa_24.tsv
+
+# --- Generated outputs ---
+data/*.rds
+data/*.RData
+data/validation_LMM_data/
+data/ML_Mvalue_prediction_data/
+results/*
+!results/.gitkeep
+!data/.gitkeep
+*.pdf
+*.png
+*.html

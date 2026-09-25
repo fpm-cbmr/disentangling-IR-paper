@@ -1,0 +1,139 @@
+---
+title: "enrichment_plots_IR_project"
+output: html_document
+date: "2025-04-17"
+---
+```{r setup, include=FALSE}
+library(ggrepel)
+library(viridis)
+library(tidyverse)
+library(ggpubr)
+
+
+`%notin%` <- Negate(`%in%`)
+```
+
+
+```{r}
+
+
+
+measured_raw <- read.delim('data-raw/All_proteins_combined_results.txt')
+measured_raw <- measured_raw %>% mutate(Significant = M.value_adj.p.value_pre<0.05)
+measured_raw <- measured_raw %>% dplyr::rename(UniProt='UniProt_ID', Protein='ID') %>% 
+  mutate(Protein = toupper(Protein))
+
+measured_raw <- measured_raw %>% group_by(Protein) %>%
+  slice_min(order_by=M.value_p.value_pre, n=1, with_ties=F) %>% ungroup() 
+
+measured <- measured_raw
+ppa <- read.delim('data-raw/UKBB_incident_disease_sumstats.csv', sep = ',')
+
+ppa <- ppa %>%   mutate(HR.95.CI. = str_remove_all(HR.95.CI., "\\[|\\]")) %>% 
+  separate(HR.95.CI., into = c("HR", "CI"), sep = " ") %>% 
+  separate(CI, into = c("HR_lower_95_CI", "HR_upper_95_CI"), sep = "-") %>%
+  mutate(
+    HR = as.numeric(HR),
+    HR_lower_95_CI = as.numeric(HR_lower_95_CI),
+    HR_upper_95_CI = as.numeric(HR_upper_95_CI)
+  )
+
+olink_assay <- read.delim('data-raw/olink_assay_1013.txt')
+olink_assay <- olink_assay %>% rename(Protein='Assay')
+ppa <- left_join(ppa, olink_assay, by='Protein')
+ppa <- ppa %>% mutate(Protein=toupper(Protein))
+p_thres <- 0.05/nrow(ppa)
+
+
+
+significant_m <- read.delim('data-raw/All_unique_significant_results.txt')
+significant_m <- significant_m %>% rename(Protein='ID')
+
+ppa_sub <- ppa %>% filter(Protein %in% significant_m$Protein)
+ppa_merge <- ppa_sub %>% left_join(significant_m, by='Protein')
+
+
+compl_assoc_prot <- ppa_merge %>% filter(P_value<p_thres) %>% filter(str_detect(Disease, 'Type 2 diabetes') & Disease != 'Type 2 diabetes without complications') %>% filter(Significant!='Post_only') %>% filter(M.value_estimate_pre>0 & log2(HR)>0)
+
+positive_m_pre <- ppa_merge %>% filter(P_value<p_thres) %>% filter(Significant!='Post_only') %>% filter(M.value_estimate_pre>0) %>% pull(UniProt) %>% unique()
+negative_m_pre <- ppa_merge %>% filter(P_value<p_thres) %>% filter(Significant!='Post_only') %>% filter(M.value_estimate_pre<0) %>% pull(UniProt) %>% unique()
+positive_t2d_hr <- ppa_merge %>% filter(P_value<p_thres) %>% filter(Significant!='Post_only') %>% filter(Disease%in% 'Type 2 diabetes without complications' & HR>1) %>% pull(UniProt) %>% unique()
+negative_t2d_hr <- ppa_merge %>% filter(P_value<p_thres) %>% filter(Significant!='Post_only') %>% filter(Disease%in% 'Type 2 diabetes without complications' & HR<1) %>% pull(UniProt) %>% unique()
+
+protein_lists <- list(
+  compl_assoc_prot_list = unique(compl_assoc_prot$UniProt),
+  positive_m_pre_list = positive_m_pre,
+  negative_m_pre_list = negative_m_pre,
+  positive_t2d_hr_list = positive_t2d_hr,
+  negative_t2d_hr_list = negative_t2d_hr
+)
+
+
+assoc_table <- ppa %>% select(Protein, Disease, Disease_category, HR, P_value, UniProt)
+
+# Loop over each list and perform fishers test
+results_list <- lapply(names(protein_lists), function(list_name) {
+  
+  interesting_proteins <- protein_lists[[list_name]]  # Select the current list
+
+  # Define different filtering conditions
+  hr_filters <- list(
+    all = assoc_table,           # No HR filtering
+    hr_above_1 = filter(assoc_table, HR > 1),  # HR > 1
+    hr_below_1 = filter(assoc_table, HR < 1)   # HR < 1
+  )
+
+  # Apply fishers exact test to each HR filtering condition
+  lapply(names(hr_filters), function(hr_name) {
+    
+
+    assoc_table_annotated <- hr_filters[[hr_name]] %>%
+      mutate(
+        Significant = P_value < p_thres,
+        InSubset = UniProt %in% interesting_proteins
+      )
+
+    #generate contingency tables and perform fishers test
+    results <- assoc_table_annotated %>%
+      group_by(Disease) %>%
+      summarise(
+        Subset_Significant = sum(InSubset & Significant),
+        Subset_NotSignificant = sum(InSubset & !Significant),
+        Other_Significant = sum(!InSubset & Significant),
+        Other_NotSignificant = sum(!InSubset & !Significant)
+      ) %>%
+      rowwise() %>%
+      mutate(
+        fisher_p = fisher.test(matrix(
+          c(Subset_Significant, Subset_NotSignificant, Other_Significant, Other_NotSignificant), 
+          nrow = 2
+        ))$p.value,
+        odds_ratio = fisher.test(matrix(
+          c(Subset_Significant, Subset_NotSignificant, Other_Significant, Other_NotSignificant), 
+          nrow = 2
+        ))$estimate
+      ) %>%
+      ungroup() %>% filter(is.finite(odds_ratio))
+
+    results_filename <- paste0("fisher_exact_", list_name, "_", hr_name, ".txt")
+    write.table(results, results_filename, row.names = F, quote = F, sep = '\t')
+
+    plot <- results %>%
+      mutate(significant = fisher_p < 0.05 / 660) %>%
+      ggplot(aes(x = odds_ratio, y = -log10(fisher_p))) +
+      geom_point(aes(color = significant, size=significant),alpha=0.4) +
+      geom_text_repel(aes(label = Disease), box.padding = 0.5, size = 3) +
+      theme_bw() +
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(size = 15),
+        axis.title = element_text(color = "black"),
+    axis.ticks = element_line(color = "black")
+      ) +  scale_color_manual(values = c("grey","darkred")) + scale_size_manual(values=c(2,3))
+
+    ggsave(paste0("figures/fishers/fisher_exact_", list_name, "_", hr_name, ".pdf"), plot, width = 6, height = 5)
+
+    return(results)
+  })
+})
+```
